@@ -8,6 +8,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.IOException;
 
+
 public class App extends JavaPlugin {
 
     private final OkHttpClient client = new OkHttpClient();
@@ -75,10 +76,10 @@ public class App extends JavaPlugin {
             requestJson.addProperty("marketCode", "ru");
 
             Request request = new Request.Builder()
-                .url("https://f-api.mego.travel/api/Flight/Search")
-                .post(RequestBody.create(requestJson.toString(), MediaType.parse("application/json")))
-                .addHeader("Accept", "application/json")
-                .build();
+                    .url("https://f-api.mego.travel/api/Flight/Search")
+                    .post(RequestBody.create(requestJson.toString(), MediaType.parse("application/json")))
+                    .addHeader("Accept", "application/json")
+                    .build();
 
             String finalFlightType = flightType;
             client.newCall(request).enqueue(new Callback() {
@@ -114,16 +115,35 @@ public class App extends JavaPlugin {
                         }
 
                         if (cheapestFlight != null) {
-                            String flightCode = cheapestFlight.getAsJsonArray("legs")
-                                .get(0).getAsJsonObject()
-                                .getAsJsonArray("segments")
-                                .get(0).getAsJsonObject()
-                                .get("flightCode").getAsString();
+                            JsonArray legs = cheapestFlight.getAsJsonArray("legs");
+                            StringBuilder flightDescription = new StringBuilder();
+
+                            for (JsonElement legElem : legs) {
+                                JsonObject leg = legElem.getAsJsonObject();
+                                JsonObject segment = leg.getAsJsonArray("segments").get(0).getAsJsonObject();
+                                String departureDateLocal = segment.get("departureDateLocal").getAsString().substring(0,
+                                        10);
+                                String flightCode = segment.get("flightCode").getAsString();
+                                String departureTerminal = segment.get("departureTerminal").getAsString();
+                                String arrivalTerminal = segment.get("arrivalTerminal").getAsString();
+                                String fromCode = segment.get("departureDestinationUID").getAsString();
+                                String toCode = segment.get("arrivalDestinationUID").getAsString();
+
+                                flightDescription.append(String.format(
+                                        "%s: %s → %s (%s, %s → %s)%n",
+                                        departureDateLocal,
+                                        fromCode,
+                                        toCode,
+                                        flightCode,
+                                        departureTerminal,
+                                        arrivalTerminal));
+                            }
 
                             String result = String.format(
-                                "Самый дешевый рейс (%s) %s → %s, цена: %.2f RUB",
-                                finalFlightType, from, where, minPrice
-                            );
+                                    "Самый дешевый рейс (%s):\n%sЦена: %.2f RUB",
+                                    legs.size() > 1 ? "туда-обратно" : "туда",
+                                    flightDescription,
+                                    minPrice);
 
                             getLogger().info(result);
                             if (sender instanceof Player) {
@@ -136,7 +156,7 @@ public class App extends JavaPlugin {
                         sender.sendMessage("Ошибка при поиске рейсов.");
                     }
                 }
-                
+
             });
 
             sender.sendMessage("Выполняется поиск рейсов (" + flightType + ")...");
