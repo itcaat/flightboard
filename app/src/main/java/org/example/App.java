@@ -7,7 +7,8 @@ import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.IOException;
-
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 
 public class App extends JavaPlugin {
 
@@ -20,6 +21,8 @@ public class App extends JavaPlugin {
     }
 
     class SearchCommand implements CommandExecutor {
+
+        private final DateTimeFormatter urlDateFormatter = DateTimeFormatter.ofPattern("MMdd");
 
         @Override
         public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
@@ -35,27 +38,23 @@ public class App extends JavaPlugin {
 
             JsonArray sections = new JsonArray();
 
-            // Добавляем перелёт "туда"
             JsonObject sectionTo = new JsonObject();
             sectionTo.addProperty("from", from);
             sectionTo.addProperty("to", where);
             sectionTo.addProperty("date", flightdate + "T00:00:00");
             sections.add(sectionTo);
 
-            String flightType = "туда";
+            boolean isRoundTrip = args.length >= 4;
 
-            // Если указана обратная дата, добавляем и обратный перелёт
-            if (args.length >= 4) {
+            if (isRoundTrip) {
                 String flightdateback = args[3];
                 JsonObject sectionBack = new JsonObject();
                 sectionBack.addProperty("from", where);
                 sectionBack.addProperty("to", from);
                 sectionBack.addProperty("date", flightdateback + "T00:00:00");
                 sections.add(sectionBack);
-                flightType = "туда-обратно";
             }
 
-            // Формируем JSON-запрос
             JsonObject requestJson = new JsonObject();
             requestJson.add("sections", sections);
             requestJson.addProperty("adults", 1);
@@ -76,12 +75,11 @@ public class App extends JavaPlugin {
             requestJson.addProperty("marketCode", "ru");
 
             Request request = new Request.Builder()
-                    .url("https://f-api.mego.travel/api/Flight/Search")
-                    .post(RequestBody.create(requestJson.toString(), MediaType.parse("application/json")))
-                    .addHeader("Accept", "application/json")
-                    .build();
+                .url("https://f-api.mego.travel/api/Flight/Search")
+                .post(RequestBody.create(requestJson.toString(), MediaType.parse("application/json")))
+                .addHeader("Accept", "application/json")
+                .build();
 
-            String finalFlightType = flightType;
             client.newCall(request).enqueue(new Callback() {
                 @Override
                 public void onFailure(Call call, IOException e) {
@@ -94,6 +92,7 @@ public class App extends JavaPlugin {
                     if (response.isSuccessful() && response.body() != null) {
                         String json = response.body().string();
                         JsonObject root = JsonParser.parseString(json).getAsJsonObject();
+                        String searchId = root.get("searchId").getAsString();
 
                         JsonArray flights = root.getAsJsonArray("flights");
                         if (flights.size() == 0) {
@@ -101,7 +100,6 @@ public class App extends JavaPlugin {
                             return;
                         }
 
-                        // Ищем самый дешевый рейс
                         JsonObject cheapestFlight = null;
                         double minPrice = Double.MAX_VALUE;
 
@@ -116,39 +114,29 @@ public class App extends JavaPlugin {
 
                         if (cheapestFlight != null) {
                             JsonArray legs = cheapestFlight.getAsJsonArray("legs");
-                            StringBuilder flightDescription = new StringBuilder();
+                            StringBuilder flightIds = new StringBuilder();
 
                             for (JsonElement legElem : legs) {
-                                JsonObject leg = legElem.getAsJsonObject();
-                                JsonObject segment = leg.getAsJsonArray("segments").get(0).getAsJsonObject();
-                                String departureDateLocal = segment.get("departureDateLocal").getAsString().substring(0,
-                                        10);
-                                String flightCode = segment.get("flightCode").getAsString();
-                                String departureTerminal = segment.get("departureTerminal").getAsString();
-                                String arrivalTerminal = segment.get("arrivalTerminal").getAsString();
-                                String fromCode = segment.get("departureDestinationUID").getAsString();
-                                String toCode = segment.get("arrivalDestinationUID").getAsString();
+                                JsonObject segment = legElem.getAsJsonObject()
+                                    .getAsJsonArray("segments").get(0).getAsJsonObject();
 
-                                flightDescription.append(String.format(
-                                        "%s: %s → %s (%s, %s → %s)%n",
-                                        departureDateLocal,
-                                        fromCode,
-                                        toCode,
-                                        flightCode,
-                                        departureTerminal,
-                                        arrivalTerminal));
+                                if (flightIds.length() > 0) flightIds.append("_");
+                                flightIds.append(segment.get("flightId").getAsString());
                             }
 
-                            String result = String.format(
-                                    "Самый дешевый рейс (%s):\n%sЦена: %.2f RUB",
-                                    legs.size() > 1 ? "туда-обратно" : "туда",
-                                    flightDescription,
-                                    minPrice);
+                            LocalDate dateTo = LocalDate.parse(flightdate);
+                            String url = String.format("https://mego.travel/flights/%s/%s/%s/100/e/booking/%s/%s",
+                                from, where, dateTo.format(urlDateFormatter), searchId, flightIds);
 
-                            getLogger().info(result);
-                            if (sender instanceof Player) {
-                                sender.sendMessage(result);
+                            if (isRoundTrip) {
+                                LocalDate dateBack = LocalDate.parse(args[3]);
+                                url = String.format("https://mego.travel/flights/%s/%s/%s/%s/%s/%s/100/e/booking/%s/%s",
+                                    from, where, dateTo.format(urlDateFormatter),
+                                    where, from, dateBack.format(urlDateFormatter), searchId, flightIds);
                             }
+
+                            String result = String.format("Самый дешевый рейс: %.2f RUB\n%s", minPrice, url);
+                            sender.sendMessage(result);
                         } else {
                             sender.sendMessage("Рейсы не найдены.");
                         }
@@ -156,10 +144,9 @@ public class App extends JavaPlugin {
                         sender.sendMessage("Ошибка при поиске рейсов.");
                     }
                 }
-
             });
 
-            sender.sendMessage("Выполняется поиск рейсов (" + flightType + ")...");
+            sender.sendMessage("Выполняется поиск рейсов...");
             return true;
         }
     }
