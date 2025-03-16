@@ -1,0 +1,8 @@
+name: MegoSearchPlugin
+version: 1.0
+main: org.example.App
+api-version: '1.20'
+commands:
+  megosearch:
+    description: "Поиск рейсов"
+    usage: "//megosearch <from> <where> <flightdate>"
