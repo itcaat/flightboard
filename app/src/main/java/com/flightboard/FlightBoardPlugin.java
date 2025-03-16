@@ -95,20 +95,31 @@ public class FlightBoardPlugin extends JavaPlugin implements CommandExecutor {
 
     private void updateSigns(List<String> flightInfoList) {
         List<Sign> signs = findFlightBoardSigns();
-
+    
         if (signs.isEmpty()) {
             Bukkit.getLogger().warning("[FlightBoard] Не найдено табличек с [FlightBoard]");
             return;
         }
-
+    
         for (Sign sign : signs) {
-            sign.setLine(0, ChatColor.BLUE + "[FlightBoard]");
-            for (int i = 0; i < flightInfoList.size(); i++) {
-                sign.setLine(i + 1, flightInfoList.get(i));
+            // Проверяем, что первая строка уже содержит [FlightBoard]
+            if (!sign.getLine(0).equalsIgnoreCase("[FlightBoard]")) {
+                continue; // Если нет, пропускаем эту табличку
             }
-            sign.update();
+    
+            // Обновляем только строки 1-3 (с рейсами)
+            for (int i = 0; i < 3; i++) {
+                if (i < flightInfoList.size()) {
+                    sign.setLine(i + 1, flightInfoList.get(i)); // Заполняем строку рейсом
+                } else {
+                    sign.setLine(i + 1, ""); // Если рейсов меньше 3-х, очищаем строку
+                }
+            }
+    
+            sign.update(); // Применяем изменения
         }
     }
+    
 
     private List<Sign> findFlightBoardSigns() {
         List<Sign> signs = new ArrayList<>();
