@@ -6,9 +6,9 @@ import com.google.gson.JsonObject;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
+import eu.decentsoftware.holograms.api.DHAPI;
+import eu.decentsoftware.holograms.api.holograms.Hologram;
 import org.bukkit.*;
-import org.bukkit.block.BlockState;
-import org.bukkit.block.Sign;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -22,6 +22,7 @@ import java.util.List;
 public class FlightBoardPlugin extends JavaPlugin implements CommandExecutor {
     private final OkHttpClient client = new OkHttpClient();
     private final Gson gson = new Gson();
+    private static final String HOLOGRAM_NAME = "FlightBoard";
 
     @Override
     public void onEnable() {
@@ -30,15 +31,15 @@ public class FlightBoardPlugin extends JavaPlugin implements CommandExecutor {
         Bukkit.getLogger().info("[FlightBoard] Плагин запущен!");
 
         // Первое обновление при старте
-        updateBillboards();
+        updateHologram();
 
-        // Запускаем таймер для автоматического обновления
+        // Запускаем таймер для обновления каждые 5 минут
         new BukkitRunnable() {
             @Override
             public void run() {
-                updateBillboards();
+                updateHologram();
             }
-        }.runTaskTimer(this, 600L, 6000L); // Обновление раз в 5 минут
+        }.runTaskTimer(this, 600L, 6000L);
     }
 
     @Override
@@ -49,15 +50,15 @@ public class FlightBoardPlugin extends JavaPlugin implements CommandExecutor {
                 return true;
             }
 
-            sender.sendMessage(ChatColor.GREEN + "Обновление билбордов...");
-            updateBillboards();
-            sender.sendMessage(ChatColor.GREEN + "Билборды обновлены!");
+            sender.sendMessage(ChatColor.GREEN + "Обновление голограммы...");
+            updateHologram();
+            sender.sendMessage(ChatColor.GREEN + "Голограмма обновлена!");
             return true;
         }
         return false;
     }
 
-    private void updateBillboards() {
+    private void updateHologram() {
         String apiUrl = getConfig().getString("api-url");
         Bukkit.getScheduler().runTaskAsynchronously(this, () -> {
             try {
@@ -72,7 +73,7 @@ public class FlightBoardPlugin extends JavaPlugin implements CommandExecutor {
                 JsonArray flights = gson.fromJson(json, JsonArray.class);
                 List<String> flightInfoList = parseFlights(flights);
 
-                Bukkit.getScheduler().runTask(this, () -> updateSigns(flightInfoList));
+                Bukkit.getScheduler().runTask(this, () -> createOrUpdateHologram(flightInfoList));
             } catch (IOException e) {
                 e.printStackTrace();
             }
@@ -81,61 +82,51 @@ public class FlightBoardPlugin extends JavaPlugin implements CommandExecutor {
 
     private List<String> parseFlights(JsonArray flights) {
         List<String> flightInfoList = new ArrayList<>();
-        for (int i = 0; i < Math.min(flights.size(), 3); i++) {
+        flightInfoList.add(ChatColor.BLUE + "**Актуальные рейсы**");
+
+        for (int i = 0; i < Math.min(flights.size(), 6); i++) { // Показываем до 6 рейсов
             JsonObject flight = flights.get(i).getAsJsonObject();
+
+            // Извлекаем данные из API
             String flightNumber = flight.get("OD_FLIGHT_NUMBER").getAsString();
             String destination = flight.get("OD_RAP_DESTINATION_NAME_RU").getAsString();
+            String airline = flight.get("OD_RAL_NAME_RUS").getAsString();
+            String aircraftType = flight.get("OD_RACT_ICAO_CODE").getAsString();
             String departureTime = flight.get("OD_STD").getAsString().split("T")[1].substring(0, 5); // HH:mm
+            String status = ""; // Значение по умолчанию
 
-            String flightInfo = ChatColor.YELLOW + flightNumber + " -> " + ChatColor.AQUA + destination + " " + ChatColor.GRAY + departureTime;
-            flightInfoList.add(flightInfo);
+            try {
+                status = ChatColor. RED + flight.get("OD_STATUS_RU").getAsString().trim();
+            } catch (UnsupportedOperationException e) {
+                status = ChatColor.GREEN + "✅ По расписанию"; // Значение по умолчанию
+            }
+
+            // Форматируем строки для голограммы
+            String line1 = ChatColor.YELLOW + "🕒 " + departureTime + " | ✈ " + flightNumber + " | " + ChatColor.AQUA
+                    + destination;
+            String line2 = ChatColor.GRAY + "🛫 " + airline + " | " + ChatColor.GOLD + aircraftType + " | "
+                    + status;
+
+            flightInfoList.add(line1);
+            flightInfoList.add(line2);
         }
+
         return flightInfoList;
     }
 
-    private void updateSigns(List<String> flightInfoList) {
-        List<Sign> signs = findFlightBoardSigns();
-    
-        if (signs.isEmpty()) {
-            Bukkit.getLogger().warning("[FlightBoard] Не найдено табличек с [FlightBoard]");
-            return;
-        }
-    
-        for (Sign sign : signs) {
-            // Проверяем, что первая строка уже содержит [FlightBoard]
-            if (!sign.getLine(0).equalsIgnoreCase("[FlightBoard]")) {
-                continue; // Если нет, пропускаем эту табличку
-            }
-    
-            // Обновляем только строки 1-3 (с рейсами)
-            for (int i = 0; i < 3; i++) {
-                if (i < flightInfoList.size()) {
-                    sign.setLine(i + 1, flightInfoList.get(i)); // Заполняем строку рейсом
-                } else {
-                    sign.setLine(i + 1, ""); // Если рейсов меньше 3-х, очищаем строку
-                }
-            }
-    
-            sign.update(); // Применяем изменения
-        }
-    }
-    
+    private void createOrUpdateHologram(List<String> flightInfoList) {
+        Location holoLocation = new Location(Bukkit.getWorld(getConfig().getString("hologram.world")),
+                getConfig().getDouble("hologram.x"),
+                getConfig().getDouble("hologram.y"),
+                getConfig().getDouble("hologram.z"));
 
-    private List<Sign> findFlightBoardSigns() {
-        List<Sign> signs = new ArrayList<>();
-        
-        for (World world : Bukkit.getWorlds()) {
-            for (Chunk chunk : world.getLoadedChunks()) {
-                for (BlockState state : chunk.getTileEntities()) {
-                    if (state instanceof Sign sign) {  // Проверяем, является ли блок табличкой
-                        if (sign.getLine(0).equalsIgnoreCase("[FlightBoard]")) {
-                            signs.add(sign);
-                        }
-                    }
-                }
-            }
+        // Удаляем старую голограмму, если есть
+        if (DHAPI.getHologram(HOLOGRAM_NAME) != null) {
+            DHAPI.removeHologram(HOLOGRAM_NAME);
         }
-        
-        return signs;
+
+        // Создаём новую голограмму
+        Hologram hologram = DHAPI.createHologram(HOLOGRAM_NAME, holoLocation);
+        DHAPI.setHologramLines(hologram, flightInfoList);
     }
 }
