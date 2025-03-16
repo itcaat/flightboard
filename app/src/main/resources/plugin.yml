@@ -1,8 +1,13 @@
-name: MegoSearchPlugin
-version: 1.0
-main: org.example.App
-api-version: '1.20'
+name: FlightBoard
+version: 1.2
+main: com.flightboard.FlightBoardPlugin
+api-version: 1.20
 commands:
-  megosearch:
-    description: "Поиск рейсов"
-    usage: "//megosearch <from> <where> <flightdate>"
+  reloadboard:
+    description: Reloads the flight board manually
+    usage: /reloadboard
+    permission: flightboard.reload
+permissions:
+  flightboard.reload:
+    description: Allows reloading the flight board manually
+    default: op

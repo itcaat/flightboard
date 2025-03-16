@@ -1,0 +1,7 @@
+api-url: "https://pulkovoairport.ru/api/?col=12&type=departure"
+update-interval: 300 # Интервал обновления в секундах
+sign-location:
+  world: "world"
+  x: 100
+  y: 65
+  z: 100
