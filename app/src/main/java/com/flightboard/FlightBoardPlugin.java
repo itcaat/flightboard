@@ -3,11 +3,11 @@ package com.flightboard;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import eu.decentsoftware.holograms.api.DHAPI;
+import eu.decentsoftware.holograms.api.holograms.Hologram;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
-import eu.decentsoftware.holograms.api.DHAPI;
-import eu.decentsoftware.holograms.api.holograms.Hologram;
 import org.bukkit.*;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
@@ -37,26 +37,22 @@ public class FlightBoardPlugin extends JavaPlugin implements CommandExecutor {
         }
 
         // Проверяем, загружены ли все параметры
-        if (!config.contains("api-url") || !config.contains("hologram.world") || 
-            !config.contains("hologram.x") || !config.contains("hologram.y") || 
-            !config.contains("hologram.z")) {
+        if (!config.contains("api-url") || !config.contains("hologram.world") ||
+            !config.contains("hologram.x") || !config.contains("hologram.y") ||
+            !config.contains("hologram.z") || !config.contains("hologram.update-interval")) {
             getLogger().warning("[FlightBoard] Конфиг не загружен! Проверьте config.yml");
             return;
         }
 
         getLogger().info("[FlightBoard] Плагин запущен!");
         getLogger().info("API URL: " + config.getString("api-url"));
-        getLogger().info("Координаты загружены: " + 
-                config.getDouble("hologram.x") + ", " + 
-                config.getDouble("hologram.y") + ", " + 
-                config.getDouble("hologram.z"));
 
         long updateIntervalTicks = getConfig().getInt("hologram.update-interval") * 20L;
         getLogger().info("[FlightBoard] Голограмма будет обновляться каждые " + (updateIntervalTicks / 20) + " секунд.");
 
         updateHologram();
 
-        // Запускаем таймер для обновления раз в 5 минут
+        // Запускаем таймер обновления
         new BukkitRunnable() {
             @Override
             public void run() {
@@ -82,61 +78,73 @@ public class FlightBoardPlugin extends JavaPlugin implements CommandExecutor {
     }
 
     private void updateHologram() {
-        String apiUrl = config.getString("api-url");
+        String baseUrl = config.getString("api-url");
         Bukkit.getScheduler().runTaskAsynchronously(this, () -> {
             try {
-                Request request = new Request.Builder().url(apiUrl).build();
-                Response response = client.newCall(request).execute();
-                if (!response.isSuccessful()) {
-                    getLogger().warning("[FlightBoard] Ошибка запроса к API: " + response.code());
-                    return;
+                List<String> flightInfoList = new ArrayList<>();
+
+                // Добавляем вылеты
+                JsonArray departures = fetchFlights(baseUrl + "?type=departure");
+                if (departures != null) {
+                    flightInfoList.add(ChatColor.YELLOW + "** Вылеты **");
+                    flightInfoList.addAll(parseFlights(departures, true)); // true = вылеты
                 }
 
-                String json = response.body().string();
-                JsonArray flights = gson.fromJson(json, JsonArray.class);
-                List<String> flightInfoList = parseFlights(flights);
+                // Добавляем прилёты
+                JsonArray arrivals = fetchFlights(baseUrl + "?type=arrival");
+                if (arrivals != null) {
+                    flightInfoList.add(""); // Разделитель между секциями
+                    flightInfoList.add(ChatColor.AQUA + "** Прилёты **");
+                    flightInfoList.addAll(parseFlights(arrivals, false)); // false = прилёты
+                }
 
                 Bukkit.getScheduler().runTask(this, () -> createOrUpdateHologram(flightInfoList));
-            } catch (IOException e) {
+            } catch (Exception e) {
                 e.printStackTrace();
                 getLogger().warning("[FlightBoard] Ошибка при получении данных из API!");
             }
         });
     }
 
-    private List<String> parseFlights(JsonArray flights) {
-        List<String> flightInfoList = new ArrayList<>();
-        flightInfoList.add(ChatColor.BLUE + "***** Аэропорт Пулково (Санкт-Петербург) *****");
-        flightInfoList.add(ChatColor.YELLOW + "** Табло вылета **");
-
-        for (int i = 0; i < Math.min(flights.size(), 6); i++) {
-            JsonObject flight = flights.get(i).getAsJsonObject();
-
-            // Извлекаем данные из API
-            String flightNumber = flight.get("OD_FLIGHT_NUMBER").getAsString();
-            String destination = flight.get("OD_RAP_DESTINATION_NAME_RU").getAsString();
-            String airline = flight.get("OD_RAL_NAME_RUS").getAsString();
-            String aircraftType = flight.get("OD_RACT_ICAO_CODE").getAsString();
-            String departureTime = flight.get("OD_STD").getAsString().split("T")[1].substring(0, 5); // HH:mm
-
-            // Проверка статуса
-            String status = "По расписанию"; // По умолчанию
-            if (flight.has("OD_STATUS_RU") && flight.get("OD_STATUS_RU").isJsonPrimitive()) {
-                status = flight.get("OD_STATUS_RU").getAsString().trim();
+    private JsonArray fetchFlights(String apiUrl) {
+        try {
+            Request request = new Request.Builder().url(apiUrl).build();
+            Response response = client.newCall(request).execute();
+            if (!response.isSuccessful()) {
+                getLogger().warning("[FlightBoard] Ошибка запроса к API: " + response.code());
+                return null;
             }
 
-            // Цветовое оформление статуса
-            ChatColor statusColor = status.equalsIgnoreCase("По расписанию") || status.equalsIgnoreCase("On Time")
-                    ? ChatColor.GREEN // ✅ Зелёный
-                    : ChatColor.RED;   // ❌ Красный
+            String json = response.body().string();
+            return gson.fromJson(json, JsonArray.class);
+        } catch (IOException e) {
+            e.printStackTrace();
+            getLogger().warning("[FlightBoard] Ошибка при получении данных из API!");
+            return null;
+        }
+    }
 
-            // Формируем строки для голограммы
-            String line1 = ChatColor.YELLOW + "🕒 " + departureTime + " | ✈ " + flightNumber + " | " + ChatColor.AQUA
-                    + destination;
-            String line2 = ChatColor.GRAY + "🛫 " + airline + " | " + ChatColor.GOLD + aircraftType + " | "
-                    + statusColor + status;
+    private List<String> parseFlights(JsonArray flights, boolean isDeparture) {
+        List<String> flightInfoList = new ArrayList<>();
 
-            flightInfoList.add(line1 + line2);
+        for (int i = 0; i < Math.min(flights.size(), 5); i++) {
+            JsonObject flight = flights.get(i).getAsJsonObject();
+
+            String flightNumber = flight.get(isDeparture ? "OD_FLIGHT_NUMBER" : "OA_FLIGHT_NUMBER").getAsString();
+            String destination = flight.get(isDeparture ? "OD_RAP_DESTINATION_NAME_RU" : "OA_RAP_ORIGIN_NAME_RU").getAsString();
+            String airline = flight.get(isDeparture ? "OD_RAL_NAME_RUS" : "OA_RAL_NAME_RUS").getAsString();
+            String aircraftType = flight.get(isDeparture ? "OD_RACT_ICAO_CODE" : "OA_RACT_ICAO_CODE").getAsString();
+            String time = flight.get(isDeparture ? "OD_STD" : "OA_STA").getAsString().split("T")[1].substring(0, 5);
+
+            String status = "По расписанию";
+            if (flight.has(isDeparture ? "OD_STATUS_RU" : "OA_STATUS_RU") && flight.get(isDeparture ? "OD_STATUS_RU" : "OA_STATUS_RU").isJsonPrimitive()) {
+                status = flight.get(isDeparture ? "OD_STATUS_RU" : "OA_STATUS_RU").getAsString().trim();
+            }
+
+            ChatColor statusColor = status.equalsIgnoreCase("По расписанию") ? ChatColor.GREEN : ChatColor.RED;
+
+            flightInfoList.add(ChatColor.YELLOW + "🕒 " + time + " | ✈ " + flightNumber + " | " + ChatColor.AQUA + destination);
+            flightInfoList.add(ChatColor.GRAY + "🛫 " + airline + " | " + ChatColor.GOLD + aircraftType + " | " + statusColor + status);
         }
 
         return flightInfoList;
@@ -155,12 +163,10 @@ public class FlightBoardPlugin extends JavaPlugin implements CommandExecutor {
 
         Location holoLocation = new Location(world, x, y, z);
 
-        // Удаляем старую голограмму
         if (DHAPI.getHologram(HOLOGRAM_NAME) != null) {
             DHAPI.removeHologram(HOLOGRAM_NAME);
         }
 
-        // Создаём новую голограмму
         Hologram hologram = DHAPI.createHologram(HOLOGRAM_NAME, holoLocation);
         DHAPI.setHologramLines(hologram, flightInfoList);
     }
