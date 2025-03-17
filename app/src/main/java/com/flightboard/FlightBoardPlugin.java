@@ -37,8 +37,8 @@ public class FlightBoardPlugin extends JavaPlugin implements CommandExecutor {
         }
 
         if (!config.contains("api-url") || !config.contains("hologram.world") ||
-            !config.contains("hologram.x") || !config.contains("hologram.y") ||
-            !config.contains("hologram.z") || !config.contains("hologram.update-interval")) {
+                !config.contains("hologram.x") || !config.contains("hologram.y") ||
+                !config.contains("hologram.z") || !config.contains("hologram.update-interval")) {
             getLogger().warning("[FlightBoard] Конфиг не загружен! Проверьте config.yml");
             return;
         }
@@ -125,26 +125,66 @@ public class FlightBoardPlugin extends JavaPlugin implements CommandExecutor {
     }
 
     // === Вылеты ===
+
     private List<String> parseDepartures(JsonArray flights) {
         List<String> flightInfoList = new ArrayList<>();
 
-        for (int i = 0; i < Math.min(flights.size(), 5); i++) {
+        for (int i = 0; i < flights.size(); i++) {
             JsonObject flight = flights.get(i).getAsJsonObject();
 
             String flightNumber = flight.get("OD_FLIGHT_NUMBER").getAsString();
             String destination = flight.get("OD_RAP_DESTINATION_NAME_RU").getAsString();
             String airline = flight.get("OD_RAL_NAME_RUS").getAsString();
             String aircraftType = flight.get("OD_RACT_ICAO_CODE").getAsString();
-            String time = flight.get("OD_STD").getAsString().split("T")[1].substring(0, 5);
+            String time = flight.get("OD_STD").getAsString().split("T")[1].substring(0, 5); // HH:mm
 
-            String status = "По расписанию";
-            if (flight.has("OD_STATUS_RU") && flight.get("OD_STATUS_RU").isJsonPrimitive()) {
-                status = flight.get("OD_STATUS_RU").getAsString().trim();
+            String status = "?";
+            ChatColor statusColor = ChatColor.GREEN;
+
+            // Если есть OD_OFFBLOCK, значит рейс отправлен
+            if (flight.has("OD_OFFBLOCK") && flight.get("OD_OFFBLOCK").isJsonPrimitive()) {
+                String offblockTime = flight.get("OD_OFFBLOCK").getAsString().split("T")[1].substring(0, 5);
+                status = "Отправлен в " + offblockTime + " (MSK)";
+                statusColor = ChatColor.GRAY;
+            } else if (flight.has("OD_BOARDING_END_ACTUAL") && flight.get("OD_BOARDING_END_ACTUAL").isJsonPrimitive()) {
+                String onboardEndTime = flight.get("OD_BOARDING_END_ACTUAL").getAsString().split("T")[1].substring(0,
+                        5);
+                status = "Посадка окончена в " + onboardEndTime + " (MSK)";
+                statusColor = ChatColor.GRAY;
+            } else if (flight.has("OD_BOARDING_BOARDING_SECOND") && flight.get("OD_BOARDING_BOARDING_SECOND").isJsonPrimitive()) {
+                String onboardEndTime = flight.get("OD_BOARDING_BOARDING_SECOND").getAsString().split("T")[1].substring(0,
+                        5);
+                status = "Посадка окончена в " + onboardEndTime + " (MSK)";
+                statusColor = ChatColor.GRAY;
+            } else if (flight.has("OD_BOARDING_BOARDING_ACTUAL")
+                    && flight.get("OD_BOARDING_BOARDING_ACTUAL").isJsonPrimitive()) {
+                // если есть OD_BOARDING_BOARDING_ACTUAL то и идет посадка
+                status = "Идет посадка";
+                statusColor = ChatColor.GREEN;
+            } else if (flight.has("OD_COUNTER_END_ACTUAL") && flight.get("OD_COUNTER_END_ACTUAL").isJsonPrimitive()) {
+                // если есть то идет посадка - по факту это костыль. Приходится на него
+                // ориентироваться так как не всегда есть OD_BOARDING_BOARDING_ACTUAL
+                status = "Идет посадка";
+                statusColor = ChatColor.GREEN;
+            } else if (flight.has("OD_COUNTER_BEGIN_ACTUAL") && flight.get("OD_COUNTER_BEGIN_ACTUAL").isJsonPrimitive()
+                    && flight.get("OD_COUNTERS").isJsonPrimitive()) {
+                // если есть то идет посадка - по факту это костыль. Приходится на него
+                // ориентироваться так как не всегда есть OD_BOARDING_BOARDING_ACTUAL
+                status = "Регистрация на " + flight.get("OD_COUNTERS").getAsString();
+                statusColor = ChatColor.GRAY;
             }
 
-            ChatColor statusColor = status.equalsIgnoreCase("По расписанию") ? ChatColor.GREEN : ChatColor.RED;
+            else if (flight.has("OD_STATUS_RU") && flight.get("OD_STATUS_RU").isJsonPrimitive()) {
+                try {
+                    status = ChatColor.RED + flight.get("OD_STATUS_RU").getAsString().trim();
+                } catch (UnsupportedOperationException e) {
+                    status = ChatColor.GREEN + "По расписанию"; // Значение по умолчанию
+                }
+            }
 
-            flightInfoList.add(ChatColor.YELLOW + "🕒 " + time + " | ✈ " + flightNumber + " | " + ChatColor.AQUA + destination + ChatColor.GRAY + "🛫 " + airline + " | " + ChatColor.GOLD + aircraftType + " | " + statusColor + status);
+            flightInfoList.add(ChatColor.YELLOW + "🕒 " + time + " | ✈ " + flightNumber + " | " + ChatColor.AQUA
+                    + destination + ChatColor.GRAY + "🛫 " + airline + " | " + ChatColor.GOLD + aircraftType + " | "
+                    + statusColor + status);
         }
 
         return flightInfoList;
@@ -154,7 +194,7 @@ public class FlightBoardPlugin extends JavaPlugin implements CommandExecutor {
     private List<String> parseArrivals(JsonArray flights) {
         List<String> flightInfoList = new ArrayList<>();
 
-        for (int i = 0; i < Math.min(flights.size(), 5); i++) {
+        for (int i = 0; i < flights.size(); i++) {
             JsonObject flight = flights.get(i).getAsJsonObject();
 
             String flightNumber = flight.get("OA_FLIGHT_NUMBER").getAsString();
@@ -170,7 +210,9 @@ public class FlightBoardPlugin extends JavaPlugin implements CommandExecutor {
 
             ChatColor statusColor = status.equalsIgnoreCase("По расписанию") ? ChatColor.GREEN : ChatColor.RED;
 
-            flightInfoList.add(ChatColor.YELLOW + "🕒 " + time + " | ✈ " + flightNumber + " | " + ChatColor.AQUA + origin + ChatColor.GRAY + "🛬 " + airline + " | " + ChatColor.GOLD + aircraftType + " | " + statusColor + status);
+            flightInfoList.add(ChatColor.YELLOW + "🕒 " + time + " | ✈ " + flightNumber + " | " + ChatColor.AQUA
+                    + origin + ChatColor.GRAY + "🛬 " + airline + " | " + ChatColor.GOLD + aircraftType + " | "
+                    + statusColor + status);
         }
 
         return flightInfoList;
@@ -183,7 +225,8 @@ public class FlightBoardPlugin extends JavaPlugin implements CommandExecutor {
             return;
         }
 
-        Location holoLocation = new Location(world, config.getDouble("hologram.x"), config.getDouble("hologram.y"), config.getDouble("hologram.z"));
+        Location holoLocation = new Location(world, config.getDouble("hologram.x"), config.getDouble("hologram.y"),
+                config.getDouble("hologram.z"));
 
         if (DHAPI.getHologram(HOLOGRAM_NAME) != null) {
             DHAPI.removeHologram(HOLOGRAM_NAME);
