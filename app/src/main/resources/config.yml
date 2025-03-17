@@ -7,3 +7,4 @@ hologram:
   x: -66
   y: 156
   z: 170
+  update-interval: 60

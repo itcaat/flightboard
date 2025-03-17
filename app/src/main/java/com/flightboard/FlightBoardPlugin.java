@@ -51,6 +51,9 @@ public class FlightBoardPlugin extends JavaPlugin implements CommandExecutor {
                 config.getDouble("hologram.y") + ", " + 
                 config.getDouble("hologram.z"));
 
+        long updateIntervalTicks = getConfig().getInt("hologram.update-interval") * 20L;
+        getLogger().info("[FlightBoard] Голограмма будет обновляться каждые " + (updateIntervalTicks / 20) + " секунд.");
+
         updateHologram();
 
         // Запускаем таймер для обновления раз в 5 минут
@@ -59,7 +62,7 @@ public class FlightBoardPlugin extends JavaPlugin implements CommandExecutor {
             public void run() {
                 updateHologram();
             }
-        }.runTaskTimer(this, 600L, 6000L);
+        }.runTaskTimer(this, 600L, updateIntervalTicks);
     }
 
     @Override
@@ -103,7 +106,8 @@ public class FlightBoardPlugin extends JavaPlugin implements CommandExecutor {
 
     private List<String> parseFlights(JsonArray flights) {
         List<String> flightInfoList = new ArrayList<>();
-        flightInfoList.add(ChatColor.BLUE + "**Актуальные рейсы**");
+        flightInfoList.add(ChatColor.BLUE + "***** Аэропорт Пулково (Санкт-Петербург) *****");
+        flightInfoList.add(ChatColor.YELLOW + "** Табло вылета **");
 
         for (int i = 0; i < Math.min(flights.size(), 6); i++) {
             JsonObject flight = flights.get(i).getAsJsonObject();
@@ -132,8 +136,7 @@ public class FlightBoardPlugin extends JavaPlugin implements CommandExecutor {
             String line2 = ChatColor.GRAY + "🛫 " + airline + " | " + ChatColor.GOLD + aircraftType + " | "
                     + statusColor + status;
 
-            flightInfoList.add(line1);
-            flightInfoList.add(line2);
+            flightInfoList.add(line1 + line2);
         }
 
         return flightInfoList;
