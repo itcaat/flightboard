@@ -1,8 +1,9 @@
+# API для получения данных о рейсах
 api-url: "https://pulkovoairport.ru/api/?col=12&type=departure"
-update-interval: 300  # Интервал обновления в секундах
 
+# === НАСТРОЙКИ ГОРОГРАММЫ ===
 hologram:
-  world: "world"
-  x: 100.5
-  y: 70.0
-  z: 100.5
+  world: "world"  # Мир, в котором будет голограмма
+  x: -66
+  y: 156
+  z: 170
