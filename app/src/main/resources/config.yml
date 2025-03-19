@@ -1,5 +1,5 @@
 # API для получения данных о рейсах
-api-url: "https://pulkovoairport.ru/api/?col=12&type=departure"
+api-url: "https://pulkovoairport.ru/api/"
 
 # === НАСТРОЙКИ ГОРОГРАММЫ ===
 hologram:
@@ -7,3 +7,4 @@ hologram:
   x: -66
   y: 156
   z: 170
+  update-interval: 60
